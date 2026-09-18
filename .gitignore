@@ -1,0 +1,12 @@
+.venv/
+reference/
+__pycache__/
+*.pyc
+.pytest_cache/
+cache/
+runs/
+*.npz
+*.parquet
+*.feather
+*.mp4
+.ipynb_checkpoints/
