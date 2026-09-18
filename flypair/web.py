@@ -102,20 +102,20 @@ def runs():
     return out
 
 
-@app.get("/api/runs/{name}/{file}")
-def run_file(name: str, file: str):
-    p = safe_path(name, file)
-    if not p.is_file():
-        raise HTTPException(404, f"{name}/{file} not found")
-    return FileResponse(p)
-
-
 @app.get("/api/runs/{name}/summary", response_class=PlainTextResponse)
 def run_summary(name: str):
     d = safe_path(name)
     if not (d / "meta.json").is_file():
         raise HTTPException(404, name)
     return Run.load(d).summary()
+
+
+@app.get("/api/runs/{name}/{file}")
+def run_file(name: str, file: str):
+    p = safe_path(name, file)
+    if not p.is_file():
+        raise HTTPException(404, f"{name}/{file} not found")
+    return FileResponse(p)
 
 
 @app.get("/api/metrics/{name}", response_class=PlainTextResponse)
