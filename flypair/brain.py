@@ -282,8 +282,7 @@ class Brain:
         nz = buf.nonzero(as_tuple=False).cpu().numpy()
         if nz.shape[0]:
             self.record.extend(nz[:, 0] + self._rec_t0, nz[:, 1], self.record_idx.cpu().numpy()[nz[:, 2]])
-        self._rec_buf = []
-        self._rec_t0 = self.t
+        self._rec_buf = None   # next _record() call re-anchors _rec_t0 at its own step
 
     def run(self, n_steps: int):
         for _ in range(n_steps):

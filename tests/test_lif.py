@@ -50,7 +50,7 @@ def test_refractory_caps_rate():
 
 
 def test_delay_is_18_ticks():
-    c = micro_connectome([(0, 1, 5000)], n=2)   # huge weight: v crosses threshold on the tick after arrival
+    c = micro_connectome([(0, 1, 20000)], n=2)  # 5500 mV on g -> 27 mV on v in one tick: fires the tick after arrival
     b = Brain(c, 1, seeds=[0], propagate="gather", record_indices=[0, 1])
     b.set_rates(0, [0], 20.0); b.commit_rates()
     b.run(5000); b.flush_record()
