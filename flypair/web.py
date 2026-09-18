@@ -8,6 +8,7 @@ Only connectomes already in the cache (or `tiny`) can be used: this app never bu
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 import traceback
@@ -36,8 +37,24 @@ def get_conn(name: str) -> Connectome:
     return STATE["conns"][name]
 
 
+SAFE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def safe_path(*parts: str) -> Path:
+    """Path under the runs directory; 404 on unsafe names, traversal or symlink escape."""
+    base = STATE["out"].resolve()
+    if not all(SAFE.match(x) for x in parts):
+        raise HTTPException(404, "not found")
+    p = (base.joinpath(*parts)).resolve()
+    try:
+        p.relative_to(base)
+    except ValueError:
+        raise HTTPException(404, "not found")
+    return p
+
+
 class RunRequest(BaseModel):
-    scenario: str
+    scenario: str                       # name of a shipped scenario (scenarios/<name>.yaml), validated below
     connectome: str | None = "tiny"     # override for every fly; None keeps the YAML's
     duration_ms: float | None = None
     controls: list[str] = []
@@ -87,29 +104,32 @@ def runs():
 
 @app.get("/api/runs/{name}/{file}")
 def run_file(name: str, file: str):
-    p = STATE["out"] / name / file
-    if ".." in name or ".." in file or not p.exists():
+    p = safe_path(name, file)
+    if not p.is_file():
         raise HTTPException(404, f"{name}/{file} not found")
     return FileResponse(p)
 
 
 @app.get("/api/runs/{name}/summary", response_class=PlainTextResponse)
 def run_summary(name: str):
-    return Run.load(STATE["out"] / name).summary()
+    d = safe_path(name)
+    if not (d / "meta.json").is_file():
+        raise HTTPException(404, name)
+    return Run.load(d).summary()
 
 
 @app.get("/api/metrics/{name}", response_class=PlainTextResponse)
 def metrics(name: str):
     """Coupling report for a live run and whatever controls exist next to it."""
     from .metrics import coupling_report
-    base = STATE["out"] / name
-    if not base.exists():
+    base = safe_path(name)
+    if not (base / "meta.json").is_file():
         raise HTTPException(404, name)
     live = Run.load(base)
     rs = {"live": live}
     for ctl in ("open_loop", "playback", "shuffled"):
-        d = STATE["out"] / f"{name}__{ctl}"
-        if d.exists():
+        d = safe_path(f"{name}__{ctl}")
+        if (d / "meta.json").is_file():
             rs[ctl] = Run.load(d)
     if len(live.flies) < 2:
         return "coupling metric needs at least two flies"
@@ -118,7 +138,9 @@ def metrics(name: str):
 
 def _job(job: dict, req: RunRequest):
     try:
-        scn = load_scenario(req.scenario)
+        if not SAFE.match(req.scenario) or not (SCENARIOS_DIR / f"{req.scenario}.yaml").is_file():
+            raise ScenarioError(f"unknown scenario {req.scenario!r}")
+        scn = load_scenario(SCENARIOS_DIR / f"{req.scenario}.yaml")
         if req.connectome:
             for f in scn["flies"]:
                 if f.get("connectome"):
