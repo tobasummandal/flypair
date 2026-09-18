@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>flypair 3D viewer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html,body{margin:0;height:100%;background:#1a1d22;color:#e8e6e1;font:13px/1.4 system-ui,sans-serif;overflow:hidden}
+  #c{position:absolute;left:0;top:0;width:100vw;height:100vh;display:block}
+  #ui{position:absolute;left:12px;top:12px;background:rgba(20,22,26,.85);padding:10px 12px;border-radius:8px;max-width:340px}
+  #ui h1{font-size:14px;margin:0 0 6px}
+  #bars{position:absolute;right:12px;top:12px;background:rgba(20,22,26,.85);padding:10px 12px;border-radius:8px;min-width:260px}
+  .fly{margin-bottom:8px}.fly b{display:block;margin-bottom:3px}
+  .bar{display:grid;grid-template-columns:70px 1fr 44px;gap:6px;align-items:center;font-size:11px;margin:1px 0}
+  .bar div{height:8px;background:#333;border-radius:4px;overflow:hidden}.bar div i{display:block;height:100%;background:#4aa3ff}
+  #tl{position:absolute;left:12px;right:12px;bottom:12px;background:rgba(20,22,26,.85);padding:8px 12px;border-radius:8px;display:flex;gap:10px;align-items:center}
+  #tl input[type=range]{flex:1}
+  button,select{background:#2c3138;color:#eee;border:1px solid #444;border-radius:5px;padding:4px 8px;cursor:pointer}
+  #drop{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:18px;color:#aaa;pointer-events:none}
+  #wm{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);color:#ff6a6a;font-size:12px}
+  body.headless #ui,body.headless #tl,body.headless #drop{display:none}
+  body.headless #title{position:absolute;left:14px;top:12px;font-size:15px;color:#ddd}
+  #cap{position:absolute;left:50%;bottom:90px;transform:translateX(-50%);background:rgba(0,0,0,.6);padding:4px 10px;border-radius:6px;display:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="drop">drop <code>&nbsp;run3d.json&nbsp;</code> here, or use the file picker</div>
+<div id="ui">
+  <h1>flypair 3D</h1>
+  <input type="file" id="file" accept=".json">
+  <div style="margin-top:6px">camera <select id="cam"><option value="orbit">orbit</option></select>
+  <label style="margin-left:8px"><input type="checkbox" id="labels" checked> labels</label></div>
+  <div id="info" style="margin-top:6px;color:#aaa"></div>
+</div>
+<div id="bars"></div>
+<div id="title"></div>
+<div id="cap"></div>
+<div id="wm"></div>
+<div id="tl">
+  <button id="play">▶</button>
+  <span id="time" style="min-width:70px">0.00 s</span>
+  <input type="range" id="scrub" min="0" max="0" value="0">
+  <select id="speed"><option value="0.1">0.1×</option><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select>
+  <button id="rec" title="records the canvas to a .webm (convert with ffmpeg)">⏺ record</button>
+</div>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ---------------------------------------------------------------- scene
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1d22);
+scene.fog = new THREE.Fog(0x1a1d22, 60, 140);
+const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 500);
+camera.position.set(0, 26, 34);
+const controls = new OrbitControls(camera, canvas); controls.target.set(0, 0, 0); controls.enableDamping = true;
+scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x3a2f20, 0.9));
+const sun = new THREE.DirectionalLight(0xfff2dc, 2.2); sun.position.set(20, 40, 15); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048); Object.assign(sun.shadow.camera, { left: -30, right: 30, top: 30, bottom: -30, near: 1, far: 120 });
+scene.add(sun);
+let arenaR = 20;
+const ground = new THREE.Group(); scene.add(ground);
+function buildArena(R) {
+  ground.clear(); arenaR = R;
+  const disk = new THREE.Mesh(new THREE.CircleGeometry(R, 96), new THREE.MeshStandardMaterial({ color: 0xd9d2c3, roughness: 0.95 }));
+  disk.rotation.x = -Math.PI / 2; disk.receiveShadow = true; ground.add(disk);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(R, 0.25, 8, 96), new THREE.MeshStandardMaterial({ color: 0x8c8474, roughness: 0.8 }));
+  rim.rotation.x = Math.PI / 2; ground.add(rim);
+  const grid = new THREE.PolarGridHelper(R, 8, 4, 64, 0xb8b0a0, 0xc9c2b3); grid.position.y = 0.01; ground.add(grid);
+}
+buildArena(20);
+
+// ---------------------------------------------------------------- procedural fly (units: mm)
+const COLORS = [0x4aa3ff, 0xff5c5c, 0x5bd66b, 0xffb84a, 0xc78bff];
+const matBody = new THREE.MeshStandardMaterial({ color: 0x8b6a3a, roughness: 0.55 });
+const matDark = new THREE.MeshStandardMaterial({ color: 0x2a2118, roughness: 0.7 });
+const matEye = new THREE.MeshStandardMaterial({ color: 0xc8241a, roughness: 0.3, emissive: 0x3a0806 });
+const matWing = new THREE.MeshStandardMaterial({ color: 0xe6eeff, alphaHash: true, opacity: 0.55, roughness: 0.25, metalness: 0.1, side: THREE.DoubleSide });  // alphaHash: dithered alpha, renders in the opaque pass (works on SwiftShader headless)
+const matLeg = new THREE.MeshStandardMaterial({ color: 0x3a2d1e, roughness: 0.8 });
+function mesh(g, m, x = 0, y = 0, z = 0) { const o = new THREE.Mesh(g, m); o.position.set(x, y, z); o.castShadow = true; return o; }
+
+function makeFly(color) {
+  const g = new THREE.Group();         // fly frame: +X forward, +Y up, +Z right
+  const L = 2.5;                       // body length mm
+  const s = L / 2.5;
+  // thorax
+  const thorax = mesh(new THREE.SphereGeometry(0.42 * s, 20, 14), matBody, 0.15 * s, 0.55 * s, 0); thorax.scale.set(1.15, 0.85, 1); g.add(thorax);
+  // head + eyes + antennae
+  const head = mesh(new THREE.SphereGeometry(0.34 * s, 18, 12), matDark, 0.75 * s, 0.6 * s, 0); head.scale.set(0.8, 1, 1.1); g.add(head);
+  for (const sg of [-1, 1]) {
+    const eye = mesh(new THREE.SphereGeometry(0.2 * s, 16, 12), matEye, 0.85 * s, 0.62 * s, sg * 0.24 * s); eye.scale.set(1, 1.3, 0.8); g.add(eye);
+    const ant = mesh(new THREE.CylinderGeometry(0.02 * s, 0.03 * s, 0.4 * s, 5), matDark, 1.05 * s, 0.68 * s, sg * 0.08 * s); ant.rotation.z = -1.1; ant.rotation.x = sg * 0.4; g.add(ant);
+  }
+  // abdomen: 5 tapering segments, alternating stripes
+  let x = -0.3 * s;
+  for (let i = 0; i < 5; i++) {
+    const r = (0.42 - i * 0.055) * s;
+    const seg = mesh(new THREE.SphereGeometry(r, 16, 12), i % 2 ? matDark : matBody, x, 0.5 * s - i * 0.03 * s, 0); seg.scale.set(0.75, 0.8, 1); g.add(seg);
+    x -= r * 0.75;
+  }
+  // wings (hinge at thorax top-rear); geometry extends along -X (backwards) from hinge
+  const wings = [];
+  for (const sg of [-1, 1]) {
+    const hinge = new THREE.Group(); hinge.position.set(0.05 * s, 0.9 * s, sg * 0.2 * s); g.add(hinge);
+    const shape = new THREE.Shape(); shape.moveTo(0, 0); shape.quadraticCurveTo(-0.6 * s, sg * 0.45 * s, -2.1 * s, sg * 0.35 * s);
+    shape.quadraticCurveTo(-2.3 * s, sg * 0.1 * s, -1.6 * s, 0); shape.lineTo(0, 0);
+    const w = new THREE.Mesh(new THREE.ShapeGeometry(shape, 12), matWing); w.rotation.x = -Math.PI / 2; w.castShadow = true;
+    hinge.add(w); wings.push({ hinge, side: sg });
+    const halt = mesh(new THREE.SphereGeometry(0.06 * s, 8, 6), matDark, -0.25 * s, 0.75 * s, sg * 0.45 * s); g.add(halt);
+  }
+  // legs: 6, two segments each (femur out, tibia down), tripod gait
+  const legs = [];
+  const anchors = [[0.45, 0.35], [0.1, 0.42], [-0.25, 0.38]];   // x, z per side, at thorax bottom
+  anchors.forEach(([ax, az], i) => {
+    for (const sg of [-1, 1]) {
+      const root = new THREE.Group(); root.position.set(ax * s, 0.35 * s, sg * az * s); g.add(root);
+      const femur = mesh(new THREE.CylinderGeometry(0.035 * s, 0.045 * s, 0.7 * s, 6), matLeg, 0, 0, sg * 0.35 * s); femur.rotation.x = sg * Math.PI / 2; root.add(femur);
+      const knee = new THREE.Group(); knee.position.set(0, 0, sg * 0.7 * s); root.add(knee);
+      const tibia = mesh(new THREE.CylinderGeometry(0.025 * s, 0.035 * s, 0.75 * s, 6), matLeg, 0, -0.35 * s, 0); knee.add(tibia);
+      const tarsus = mesh(new THREE.CylinderGeometry(0.015 * s, 0.02 * s, 0.35 * s, 5), matLeg, 0.1 * s, -0.85 * s, 0); tarsus.rotation.z = -0.6; knee.add(tarsus);
+      legs.push({ root, knee, side: sg, phase: ((i + (sg > 0 ? 1 : 0)) % 2) * Math.PI, baseYaw: (i - 1) * 0.5, sg });
+    }
+  });
+  // marker ring for song + flash for jump + label sprite
+  const ring = new THREE.Mesh(new THREE.RingGeometry(1.8, 1.95, 48), new THREE.MeshBasicMaterial({ color, alphaHash: true, opacity: 0, side: THREE.DoubleSide }));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05; g.add(ring);
+  const flash = new THREE.Mesh(new THREE.SphereGeometry(2.5, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffe066, alphaHash: true, opacity: 0 })); g.add(flash);
+  const label = makeLabel('', color); label.position.set(0, 3.2, 0); g.add(label);
+  return { g, wings, legs, ring, flash, label, gait: 0, wingT: 0, extend: 0, color };
+}
+function makeLabel(text, color) {
+  const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64; const ctx = cv.getContext('2d');
+  ctx.font = 'bold 40px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#' + color.toString(16).padStart(6, '0'); ctx.fillText(text, 128, 46);
+  const tex = new THREE.CanvasTexture(cv); const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  sp.scale.set(4, 1, 1); sp.userData.set = (t) => { ctx.clearRect(0, 0, 256, 64); ctx.fillText(t, 128, 46); tex.needsUpdate = true; }; return sp;
+}
+
+// ---------------------------------------------------------------- run data
+let run = null, flies = {}, order = [], nTicks = 0, dt = 20, tick = 0, playing = false, speed = 1, acc = 0;
+const KEY = ['p1', 'pip10', 'wing_mn', 'dna02_L', 'dna02_R', 'forward_dn', 'dnp01', 'mdn', 'vpodn', 'dnp13', 'mn9'];
+let rateMax = {}, captions = null;
+function loadRun(data) {
+  run = data; dt = data.meta.world_dt_ms || 20; captions = data.captions || null;
+  buildArena(data.meta.arena?.radius_mm || 20);
+  for (const f of Object.values(flies)) scene.remove(f.g);
+  flies = {}; order = data.flies;
+  order.forEach((name, i) => { const f = makeFly(COLORS[i % COLORS.length]); f.label.userData.set(name); scene.add(f.g); flies[name] = f; });
+  nTicks = data.frames.length / order.length;
+  rateMax = {}; for (const k of KEY) { let m = 1; for (const r of data.frames) if (r['rate_' + k] > m) m = r['rate_' + k]; rateMax[k] = m; }
+  document.getElementById('scrub').max = nTicks - 1; tick = 0;
+  document.getElementById('drop').style.display = 'none';
+  document.getElementById('title').textContent = `${data.meta.name}` + (data.meta.control ? ` — control: ${data.meta.control}` : '') + (data.watermark ? '' : '');
+  document.getElementById('info').textContent = `${data.meta.name} · ${order.length} flies · ${(nTicks * dt / 1000).toFixed(1)} s · dt ${dt} ms` + (data.meta.control ? ` · control ${data.meta.control}` : '');
+  document.getElementById('wm').textContent = data.watermark || '';
+  const cam = document.getElementById('cam'); cam.innerHTML = '<option value="orbit">orbit</option><option value="top">top</option>' + order.map(n => `<option value="follow:${n}">follow ${n}</option>`).join('');
+  const bars = document.getElementById('bars');
+  bars.innerHTML = order.map((n, i) => `<div class="fly"><b style="color:#${COLORS[i % COLORS.length].toString(16).padStart(6, '0')}">${n}</b>` +
+    KEY.filter(k => ('rate_' + k) in data.frames[0]).map(k => `<div class="bar"><span>${k}</span><div><i id="b_${n}_${k}" style="width:0;background:#${COLORS[i % COLORS.length].toString(16).padStart(6, '0')}"></i></div><span id="v_${n}_${k}">0</span></div>`).join('') + '</div>').join('');
+  setTick(0);
+}
+function frame(name, t) { return run.frames[t * order.length + order.indexOf(name)]; }
+function setTick(t) {
+  tick = Math.max(0, Math.min(nTicks - 1, Math.round(t)));
+  document.getElementById('scrub').value = tick; document.getElementById('time').textContent = (tick * dt / 1000).toFixed(2) + ' s';
+  for (const name of order) {
+    const f = flies[name], r = frame(name, tick);
+    f.g.position.set(r.x, 0, -r.y); f.g.rotation.y = THREE.MathUtils.degToRad(r.heading);
+    f.speedNow = Math.abs(r.speed || 0); f.songNow = r.song || 0; f.jumpNow = !!r.jump; f.turnNow = r.turn || 0;
+    // which wing to extend: the side the nearest other fly is on (courtship: wing nearest the target)
+    let bestB = 0, bestD = 1e9;
+    for (const o of order) if (o !== name) { const q = frame(o, tick); const d = Math.hypot(q.x - r.x, q.y - r.y); if (d < bestD) { bestD = d; bestB = Math.atan2(q.y - r.y, q.x - r.x) - THREE.MathUtils.degToRad(r.heading); } }
+    f.extendSide = Math.sin(bestB) > 0 ? -1 : 1;   // +y left in 2D = -z in three.js -> left wing is z<0
+    for (const k of KEY) { const el = document.getElementById(`b_${name}_${k}`); if (!el) continue; const v = r['rate_' + k] || 0; el.style.width = (100 * v / rateMax[k]).toFixed(1) + '%'; document.getElementById(`v_${name}_${k}`).textContent = v.toFixed(1); }
+  }
+  const cap = document.getElementById('cap');
+  if (captions) { const near = Object.keys(captions).map(Number).filter(k => k <= tick).sort((a, b) => b - a)[0]; if (near !== undefined) { cap.style.display = 'block'; cap.innerHTML = Object.entries(captions[near]).map(([n, t]) => `<b>${n}:</b> ${t}`).join(' &nbsp;·&nbsp; '); } }
+}
+// ---------------------------------------------------------------- animation (legs, wings, effects)
+function animate(dtSec) {
+  for (const name of order) {
+    const f = flies[name];
+    f.gait += dtSec * (2 + f.speedNow * 1.2) * (f.speedNow > 0.3 ? 1 : 0.15);
+    const amp = Math.min(0.5, 0.08 + f.speedNow * 0.04);
+    for (const l of f.legs) {
+      const ph = f.gait * 6 + l.phase;
+      l.root.rotation.y = l.baseYaw + Math.sin(ph) * amp;                   // swing fore/aft
+      l.root.rotation.x = l.sg * (-0.35 + Math.max(0, Math.cos(ph)) * amp * 1.2); // lift on swing
+      l.knee.rotation.x = l.sg * 0.25;
+    }
+    f.wingT += dtSec * 60;
+    const target = f.songNow > 0.05 ? 1 : 0; f.extend += (target - f.extend) * Math.min(1, dtSec * 8);
+    for (const w of f.wings) {
+      const isExt = w.side === f.extendSide;
+      const rest = -w.side * 0.12;                                         // folded over the back
+      const ext = -w.side * 1.35;                                          // ~75 degrees out
+      const vib = isExt ? Math.sin(f.wingT * 3.5) * 0.25 * f.songNow : Math.sin(f.wingT * 0.3) * 0.02;
+      w.hinge.rotation.y = rest + (isExt ? (ext - rest) * f.extend : 0) + vib * f.extend;
+      w.hinge.rotation.x = isExt ? Math.sin(f.wingT * 3.5) * 0.12 * f.songNow * f.extend : 0;
+    }
+    f.ring.material.opacity = f.songNow * (0.5 + 0.3 * Math.sin(f.wingT * 0.4)); f.ring.visible = f.ring.material.opacity > 0.02; f.ring.scale.setScalar(1 + f.songNow * 0.6 * (0.5 + 0.5 * Math.sin(f.wingT * 0.4)));
+    f.flash.material.opacity = f.jumpNow ? 0.6 : Math.max(0, f.flash.material.opacity - dtSec * 3); f.flash.visible = f.flash.material.opacity > 0.02;
+    f.g.position.y = f.jumpNow ? 1.2 : Math.max(0, f.g.position.y - dtSec * 8);
+    f.g.rotation.z = -f.speedNow * 0.01; f.g.rotation.x = f.turnNow * 0.0006;
+    f.label.visible = document.getElementById('labels').checked;
+  }
+  const camSel = document.getElementById('cam').value;
+  if (camSel.startsWith('follow:')) { const f = flies[camSel.slice(7)]; if (f) { const p = f.g.position; const h = f.g.rotation.y; const back = new THREE.Vector3(-Math.cos(h) * 8, 5, Math.sin(h) * 8); camera.position.lerp(p.clone().add(back), 0.08); controls.target.lerp(p, 0.2); } }
+  else if (camSel === 'top') { camera.position.lerp(new THREE.Vector3(0, 55, 0.01), 0.1); controls.target.lerp(new THREE.Vector3(0, 0, 0), 0.1); }
+}
+let last = performance.now();
+function loop(now) {
+  const dtSec = Math.min(0.1, (now - last) / 1000); last = now;
+  if (playing && run) { acc += dtSec * 1000 * speed; while (acc >= dt) { acc -= dt; if (tick < nTicks - 1) setTick(tick + 1); else { playing = false; document.getElementById('play').textContent = '▶'; } } }
+  if (run) animate(dtSec * (playing ? speed : 0.3));
+  controls.update(); resize(); renderer.render(scene, camera); requestAnimationFrame(loop);
+}
+function resize() { const w = canvas.clientWidth, h = canvas.clientHeight; if (canvas.width !== w * renderer.getPixelRatio() || canvas.height !== h * renderer.getPixelRatio()) { renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); } }
+requestAnimationFrame(loop);
+
+// ---------------------------------------------------------------- UI
+document.getElementById('play').onclick = () => { playing = !playing; document.getElementById('play').textContent = playing ? '⏸' : '▶'; };
+document.getElementById('scrub').oninput = (e) => setTick(+e.target.value);
+document.getElementById('speed').onchange = (e) => speed = +e.target.value;
+document.getElementById('file').onchange = async (e) => loadRun(JSON.parse(await e.target.files[0].text()));
+addEventListener('dragover', (e) => e.preventDefault());
+addEventListener('drop', async (e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) loadRun(JSON.parse(await f.text())); });
+addEventListener('keydown', (e) => { if (e.code === 'Space') { e.preventDefault(); document.getElementById('play').click(); } if (e.code === 'ArrowRight') setTick(tick + 1); if (e.code === 'ArrowLeft') setTick(tick - 1); });
+let recorder = null, chunks = [];
+document.getElementById('rec').onclick = () => {
+  if (recorder) { recorder.stop(); return; }
+  const stream = canvas.captureStream(30); chunks = [];
+  recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 8e6 });
+  recorder.ondataavailable = (e) => chunks.push(e.data);
+  recorder.onstop = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(chunks, { type: 'video/webm' })); a.download = (run?.meta.name || 'flypair') + '_3d.webm'; a.click(); recorder = null; document.getElementById('rec').textContent = '⏺ record'; };
+  recorder.start(); document.getElementById('rec').textContent = '⏹ stop';
+  if (!playing) document.getElementById('play').click();
+};
+const q = new URLSearchParams(location.search);
+if (q.get('run')) fetch(q.get('run')).then(r => r.json()).then(loadRun);
+if (q.get('headless')) document.body.classList.add('headless');
+// headless API (flypair/video3d.py)
+window.flypair = { get scene() { return scene; }, get flies() { return flies; }, loadRun, setTick, animate, render: () => { resize(); controls.update(); renderer.render(scene, camera); }, setCamera: (v) => { const s = document.getElementById('cam'); s.value = v; }, get nTicks() { return nTicks; } };
+</script>
+</body>
+</html>

@@ -17,11 +17,14 @@ dependencies = [
   "matplotlib>=3.7",
   "tqdm>=4.65",
   "psutil>=5.9",
+  "imageio-ffmpeg>=0.4",
 ]
+
 
 [project.optional-dependencies]
 test = ["pytest>=7"]
 dub = ["anthropic>=0.30"]
+video3d = ["playwright>=1.40"]
 
 [project.scripts]
 flypair = "flypair.cli:main"

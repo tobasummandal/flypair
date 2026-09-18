@@ -3,6 +3,18 @@ song = pulsing ring, escape jump = flash, right panel = live rate bars of key gr
 from __future__ import annotations
 
 import shutil
+
+
+def ffmpeg_exe():
+    """System ffmpeg, else the binary bundled with imageio-ffmpeg, else None."""
+    exe = shutil.which("ffmpeg")
+    if exe:
+        return exe
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return None
 import warnings
 from pathlib import Path
 
@@ -87,7 +99,9 @@ def render(run: Run, out: Path | str, fps: int = 25, speed: float = 1.0, caption
         return arts
 
     anim = animation.FuncAnimation(fig, update, frames=len(ticks), blit=False)
-    if shutil.which("ffmpeg"):
+    exe = ffmpeg_exe()
+    if exe:
+        matplotlib.rcParams["animation.ffmpeg_path"] = exe
         anim.save(str(out), writer=animation.FFMpegWriter(fps=fps, bitrate=2000))
     else:
         out = out.with_suffix(".gif")

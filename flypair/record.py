@@ -36,7 +36,24 @@ class Run:
         (d / "meta.json").write_text(json.dumps(self.meta, indent=2, default=str))
         # JSON copy of the frames for people without parquet readers
         self.frames.to_json(d / "run.json", orient="records")
+        (d / "run3d.json").write_text(self.to_viewer_json())
         return d
+
+    def to_viewer_json(self, captions: dict | None = None, watermark: str | None = None) -> str:
+        """Single-file bundle for viewer/index.html (3D) and flypair.video3d: meta, fly order, frames."""
+        keep = ["tick", "t_ms", "fly", "x", "y", "heading", "speed", "turn", "song", "jump"] + \
+               [c for c in self.frames.columns if c.startswith("rate_") or c.startswith("em_")]
+        fr = self.frames[keep].sort_values(["tick", "fly"]).copy()
+        fr["fly"] = pd.Categorical(fr["fly"], categories=self.flies, ordered=True)
+        fr = fr.sort_values(["tick", "fly"])
+        recs = json.loads(fr.round(4).to_json(orient="records"))
+        m = {k: self.meta.get(k) for k in ("name", "control", "duration_ms", "world_dt_ms", "arena")}
+        doc = {"meta": m, "flies": self.flies, "frames": recs}
+        if captions:
+            doc["captions"] = {str(k): v for k, v in captions.items()}
+        if watermark:
+            doc["watermark"] = watermark
+        return json.dumps(doc)
 
     @classmethod
     def load(cls, d: Path | str) -> "Run":

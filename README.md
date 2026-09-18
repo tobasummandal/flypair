@@ -38,7 +38,8 @@ flypair/world.py          arena, poses, emitters, MotorDecoder
 flypair/channels.py       declarative source->target sensory channels
 flypair/scenario.py       YAML validation + closed-loop runner (one Brain per connectome, batch = flies)
 flypair/controls.py       shuffled connectome, run_controls;  metrics.py  xcorr + TE-lite
-flypair/record.py plots.py video.py dub.py sanity.py cli.py
+flypair/record.py plots.py video.py video3d.py dub.py sanity.py cli.py
+viewer/index.html         three.js 3D viewer (procedural fly), also used headlessly by video3d.py
 groups/{tiny,malecns,flywire}.yaml   scenarios/*.yaml   tests/   flypair_colab.ipynb   PLAN.md
 ```
 
@@ -148,6 +149,18 @@ FlyWire with RAM + timing, (4) group report, (5) sugar→MN9 sanity check + CPU/
 Outputs per run: `runs/<name>/run.parquet` (+ `run.json`) with per-tick poses, emitters,
 `rate_<group>` and `drive_<group>` columns; `spikes.parquet` for raster groups; `meta.json` with
 every constant, channel and decoder used; `rasters.png`, `rates.png`, `trajectories.png`, `arena.mp4`.
+
+## 3D viewer + video
+
+`viewer/index.html` is a single-file three.js page with a procedural fruit fly (red compound
+eyes, antennae, striped abdomen, six legs with a tripod gait scaled by speed, wings that extend
+~75° on the side facing the nearest fly and vibrate with song intensity, halteres), a song ring,
+an escape flash, per-fly rate bars, orbit / top / follow cameras, a timeline scrubber and an
+in-browser ⏺ record button (WebM). Open it in any browser and drop `runs/<name>/run3d.json` on
+it. `flypair.video3d.render3d(run, "arena3d.mp4", camera="follow:A")` renders the same page
+headlessly (Playwright + Chromium → ffmpeg); notebook cell 8b does this on Colab. The 2D
+matplotlib MP4 (`arena.mp4`) is still produced by cell 8. The fly model is hand-built (no
+external asset; fly.ai's `wiz.fbx` is a monkey wizard, not a fly).
 
 ## Sanity check reference
 
