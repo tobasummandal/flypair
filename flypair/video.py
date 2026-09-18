@@ -3,10 +3,11 @@ GitHub-hosted fly mesh when available, falling back to simple triangles otherwis
 """
 from __future__ import annotations
 
-import io
 import shutil
+import struct
 import urllib.request
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from pathlib import Path
 
@@ -45,7 +46,11 @@ def _triangle(x, y, heading_deg, size):
 
 def _parse_ascii_stl(stream):
     """Parse a simple ASCII STL into an array of (n_faces, 3, 3) vertices."""
-    data = stream.read().decode("utf-8", errors="ignore")
+    data = stream.read() if hasattr(stream, "read") else stream
+    if isinstance(data, bytes):
+        data = data.decode("utf-8", errors="ignore")
+    elif not isinstance(data, str):
+        raise TypeError("ASCII STL input must be bytes, text, or a readable stream")
     lines = data.splitlines()
     tokens = []
     for line in lines:
@@ -57,28 +62,84 @@ def _parse_ascii_stl(stream):
                 continue
     if not tokens:
         return np.zeros((0, 3, 3), dtype=float)
+    if len(tokens) % 3:
+        raise ValueError(f"invalid ASCII STL: found {len(tokens)} vertices (expected a multiple of 3)")
     faces = np.array(tokens, dtype=float).reshape(-1, 3, 3)
     return faces
 
 
+def _parse_stl(data):
+    """Parse binary or ASCII STL bytes into ``(faces, 3, 3)`` vertices."""
+    if isinstance(data, str):
+        return _parse_ascii_stl(data)
+    if not isinstance(data, (bytes, bytearray, memoryview)):
+        data = data.read()
+    raw = bytes(data)
+
+    # Binary STL is an 80-byte header, a uint32 face count, then 50 bytes/face.
+    # Requiring the advertised size to match also avoids misclassifying ASCII
+    # files whose header happens to contain arbitrary bytes at this offset.
+    if len(raw) >= 84:
+        n_faces = struct.unpack_from("<I", raw, 80)[0]
+        if 84 + 50 * n_faces == len(raw):
+            face_dtype = np.dtype([
+                ("normal", "<f4", (3,)),
+                ("vertices", "<f4", (3, 3)),
+                ("attribute", "<u2"),
+            ])
+            records = np.frombuffer(raw, dtype=face_dtype, count=n_faces, offset=84)
+            return np.asarray(records["vertices"], dtype=float)
+    return _parse_ascii_stl(raw)
+
+
+def _complete_bilateral_part(mesh, name):
+    """Mirror source-model parts that are supplied for the left side only."""
+    if not name.startswith("l_"):
+        return mesh
+    mirrored = mesh.copy()
+    mirrored[:, :, 1] *= -1.0
+    return np.concatenate((mesh, mirrored), axis=0)
+
+
 @lru_cache(maxsize=1)
-def _load_fly_mesh():
-    meshes = []
-    for name in FLY_MESH_FILES:
+def _load_fly_mesh_parts():
+    def fetch(name):
         url = FLY_MESH_BASE + name
         try:
-            with urllib.request.urlopen(url, timeout=20) as resp:
-                mesh = _parse_ascii_stl(io.StringIO(resp.read().decode("utf-8", errors="ignore")))
-            if mesh.size:
-                meshes.append(mesh)
-        except Exception:
-            continue
-    if not meshes:
+            request = urllib.request.Request(url, headers={"User-Agent": "flypair/0.1"})
+            with urllib.request.urlopen(request, timeout=10) as resp:
+                mesh = _parse_stl(resp.read())
+            return mesh if mesh.size else None
+        except Exception as exc:
+            return exc
+
+    # The model is split across several STL files. Fetching concurrently keeps
+    # the first render tolerable on a fresh Colab runtime; this result is cached.
+    with ThreadPoolExecutor(max_workers=min(8, len(FLY_MESH_FILES))) as pool:
+        results = list(pool.map(fetch, FLY_MESH_FILES))
+    downloaded = [(name, result) for name, result in zip(FLY_MESH_FILES, results)
+                  if isinstance(result, np.ndarray) and result.size]
+    if not downloaded:
+        failures = [result for result in results if isinstance(result, Exception)]
+        detail = f" ({failures[0]})" if failures else ""
+        warnings.warn(f"fly mesh unavailable; using triangle markers{detail}", RuntimeWarning)
         return None
-    return np.concatenate(meshes, axis=0)
+    parts = []
+    for name, mesh in downloaded:
+        parts.append(mesh)
+        if name.startswith("l_"):
+            parts.append(_complete_bilateral_part(mesh, name)[len(mesh):])
+    return tuple(parts)
 
 
-def _mesh_to_polygon(mesh, heading_deg=0.0, scale=1.0):
+@lru_cache(maxsize=1)
+def _load_fly_mesh():
+    parts = _load_fly_mesh_parts()
+    return None if parts is None else np.concatenate(parts, axis=0)
+
+
+def _mesh_outline(mesh):
+    """Return a centered, unit-radius convex outline of a projected STL mesh."""
     if mesh is None or mesh.size == 0:
         return None
     pts = mesh.reshape(-1, 3)
@@ -86,26 +147,72 @@ def _mesh_to_polygon(mesh, heading_deg=0.0, scale=1.0):
     xy = xy - xy.mean(axis=0)
     if np.allclose(xy, 0):
         return np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
+    radius = float(np.max(np.linalg.norm(xy, axis=1)))
+    xy = xy / max(radius, 1e-12)
+    try:
+        return xy[ConvexHull(xy).vertices]
+    except Exception:
+        indices = np.unique(np.round(xy, 8), axis=0, return_index=True)[1]
+        return xy[np.sort(indices)]
+
+
+def _mesh_part_outlines(parts):
+    """Create globally aligned outlines while retaining separate body parts."""
+    if not parts:
+        return None
+    all_xy = np.concatenate([part.reshape(-1, 3)[:, :2] for part in parts], axis=0)
+    center = all_xy.mean(axis=0)
+    radius = float(np.max(np.linalg.norm(all_xy - center, axis=1)))
+    outlines = []
+    for part in parts:
+        xy = (part.reshape(-1, 3)[:, :2] - center) / max(radius, 1e-12)
+        try:
+            outline = xy[ConvexHull(xy).vertices]
+        except Exception:
+            indices = np.unique(np.round(xy, 8), axis=0, return_index=True)[1]
+            outline = xy[np.sort(indices)]
+        if len(outline) >= 3:
+            outlines.append(outline)
+    return tuple(outlines) or None
+
+
+def _transform_polygon(poly, x=0.0, y=0.0, heading_deg=0.0, scale=1.0):
     h = np.radians(heading_deg)
     rot = np.array([[np.cos(h), -np.sin(h)], [np.sin(h), np.cos(h)]])
-    xy = (xy @ rot.T) * scale
-    scale_xy = np.max(np.abs(xy))
-    if scale_xy and scale_xy > 0:
-        xy = xy / max(scale_xy, 1e-6)
-    try:
-        hull = ConvexHull(xy)
-        return xy[hull.vertices]
-    except Exception:
-        return xy[np.unique(np.round(xy, 8), axis=0, return_index=True)[1]]
+    return (poly @ rot.T) * float(scale) + np.array([x, y])
+
+
+def _mesh_to_polygon(mesh, heading_deg=0.0, scale=1.0):
+    """Project a mesh to a correctly scaled and oriented 2-D silhouette."""
+    outline = _mesh_outline(mesh)
+    if outline is None:
+        return None
+    return _transform_polygon(outline, heading_deg=heading_deg, scale=scale)
+
+
+@lru_cache(maxsize=1)
+def _load_fly_outline():
+    return _mesh_outline(_load_fly_mesh())
+
+
+@lru_cache(maxsize=1)
+def _load_fly_part_outlines():
+    return _mesh_part_outlines(_load_fly_mesh_parts())
 
 
 def _fly_shape(x, y, heading_deg, size):
-    mesh = _load_fly_mesh()
-    if mesh is not None:
-        poly = _mesh_to_polygon(mesh, heading_deg=heading_deg, scale=float(size) * 2.5)
-        if poly is not None and len(poly) >= 3:
-            return poly + np.array([x, y])
+    outline = _load_fly_outline()
+    if outline is not None and len(outline) >= 3:
+        return _transform_polygon(outline, x, y, heading_deg, size)
     return _triangle(x, y, heading_deg, size)
+
+
+def _fly_shapes(x, y, heading_deg, size):
+    """Return separate transformed body-part polygons for a recognizable fly."""
+    outlines = _load_fly_part_outlines()
+    if outlines:
+        return [_transform_polygon(part, x, y, heading_deg, size) for part in outlines]
+    return [_triangle(x, y, heading_deg, size)]
 
 
 def render(run: Run, out: Path | str, fps: int = 25, speed: float = 1.0, captions: dict | None = None,
@@ -133,8 +240,12 @@ def render(run: Run, out: Path | str, fps: int = 25, speed: float = 1.0, caption
     bodies, rings, flashes, labels, bars, caps = {}, {}, {}, {}, {}, {}
     for k, f in enumerate(flies):
         col = COLORS[k % len(COLORS)]
-        bodies[f] = plt.Polygon(_fly_shape(0, 0, 0, 1.5), color=col)
-        ax.add_patch(bodies[f])
+        first = frames[f].iloc[0]
+        body_size = 0.6 * float(first.get("em_size", 2.5))
+        bodies[f] = [plt.Polygon(shape, color=col) for shape in
+                     _fly_shapes(first.x, first.y, first.heading, body_size)]
+        for body in bodies[f]:
+            ax.add_patch(body)
         rings[f] = plt.Circle((0, 0), 0.1, fill=False, color=col, lw=2, alpha=0.0)
         ax.add_patch(rings[f])
         flashes[f] = plt.Circle((0, 0), 4, color="yellow", alpha=0.0)
@@ -155,7 +266,10 @@ def render(run: Run, out: Path | str, fps: int = 25, speed: float = 1.0, caption
         arts = [title]
         for k, f in enumerate(flies):
             r = frames[f].iloc[tick]
-            bodies[f].set_xy(_fly_shape(r.x, r.y, r.heading, 1.5))
+            body_size = 0.6 * float(r.get("em_size", 2.5))
+            shapes = _fly_shapes(r.x, r.y, r.heading, body_size)
+            for body, shape in zip(bodies[f], shapes):
+                body.set_xy(shape)
             s = float(r.song)
             rings[f].center = (r.x, r.y); rings[f].radius = 2.0 + 2.5 * s * (0.5 + 0.5 * np.sin(tick * 0.9))
             rings[f].set_alpha(min(1.0, s * 1.2))
@@ -166,7 +280,7 @@ def render(run: Run, out: Path | str, fps: int = 25, speed: float = 1.0, caption
             for j, g in enumerate(groups):
                 v = r.get(f"rate_{g}", np.nan)
                 bars[f][j].set_width(0.0 if np.isnan(v) else v / rate_max[g])
-            arts += [bodies[f], rings[f], flashes[f], labels[f], caps[f]]
+            arts += bodies[f] + [rings[f], flashes[f], labels[f], caps[f]]
         return arts
 
     anim = animation.FuncAnimation(fig, update, frames=len(ticks), blit=False)
