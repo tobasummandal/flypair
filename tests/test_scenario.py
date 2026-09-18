@@ -78,7 +78,8 @@ def test_playback_control_runs(tiny):
     pb = run_scenario(scn, {"tiny": tiny}, control="playback", playback_from=live, progress=False, verbose=False)
     a_live, a_pb = live.fly_frames("A"), pb.fly_frames("A")
     assert np.allclose(a_live.x, a_pb.x) and np.allclose(a_live.song, a_pb.song)
-    assert a_pb["rate_p1"].isna().all() or "rate_p1" not in a_pb.columns  # A had no brain in playback
+    assert np.array_equal(a_live["rate_p1"].to_numpy(), a_pb["rate_p1"].to_numpy())  # replayed rates, not simulated
+    assert pb.meta["control"] == "playback"
 
 
 def test_shuffled_control_preserves_degrees(tiny):

@@ -279,6 +279,9 @@ def run_scenario(scn: dict, connectomes: dict, control: str | None = None, playb
             counts = slot.brain.take_counts()
             for b, f in enumerate(slot.flies):
                 rates_by_fly[f.name] = {g: float(counts[b, idx].mean() / window_s) for g, idx in group_index[cname].items()}
+        for f in flies:
+            if isinstance(f.source, RecordedSource):
+                rates_by_fly[f.name] = f.source.recorded_rates(tick)   # replayed, not simulated
         # 2. motor commands -> world
         cmds = {f.name: f.source.motor(f, rates_by_fly[f.name], world, tick) for f in flies}
         world.apply_all(cmds)
@@ -323,6 +326,7 @@ def run_scenario(scn: dict, connectomes: dict, control: str | None = None, playb
             "motor": world.motor.cfg, "arena": scn["arena"], "wall_s": time.time() - t_wall,
             "connectomes": {n: c.meta for n, c in conns.items()},
             "record_groups": {n: s.record_groups for n, s in slots.items()},
+            "raster_groups": scn["record"]["rasters"],
             "skipped_channels": bank.skipped, "lif": SHIU.__dict__}
     run = Run(scn["name"] + (f"__{control}" if control else ""), frames, spikes, meta)
     if out_dir:

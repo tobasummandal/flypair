@@ -62,6 +62,11 @@ class RecordedSource(InputSource):
         self.by_tick = {int(r.tick): r for r in self.table.itertuples()}
         self.last = self.table.iloc[-1]
 
+    def recorded_rates(self, tick: int) -> dict:
+        """The recorded fly's own group rates at this tick (for metrics/plots; it has no brain now)."""
+        r = self.by_tick.get(int(tick), self.last)
+        return {c[5:]: float(getattr(r, c)) for c in self.table.columns if c.startswith("rate_")}
+
     def motor(self, fly, rates, world, tick):
         r = self.by_tick.get(int(tick), self.last)
         em = {c: float(getattr(r, c)) for c in self.table.columns if c.startswith("em_")}
