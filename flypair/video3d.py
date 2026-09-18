@@ -31,7 +31,6 @@ VIEWER = PKG_ROOT / "viewer" / "index.html"
 def render3d(run: Run, out: Path | str, fps: int = 30, speed: float = 1.0, width: int = 1280, height: int = 720,
              camera: str = "orbit", captions: dict | None = None, watermark: str | None = None,
              tick_stride: int | None = None, verbose: bool = True) -> Path:
-    from playwright.sync_api import sync_playwright
     out = Path(out)
     dt = float(run.meta.get("world_dt_ms", 20))
     stride = tick_stride or max(1, int(round(1000.0 / fps / dt * speed)))
@@ -39,19 +38,30 @@ def render3d(run: Run, out: Path | str, fps: int = 30, speed: float = 1.0, width
     ticks = list(range(0, n_ticks, stride))
     data = run.to_viewer_json(captions=captions, watermark=watermark)
     tmp = Path(tempfile.mkdtemp(prefix="flypair3d_"))
-    with sync_playwright() as p:
-        browser = p.chromium.launch(args=["--use-gl=swiftshader", "--enable-webgl", "--ignore-gpu-blocklist"])
-        page = browser.new_page(viewport={"width": width, "height": height})
-        page.goto(VIEWER.as_uri() + "?headless=1")
-        page.wait_for_function("window.flypair !== undefined", timeout=60000)
-        page.evaluate("d => window.flypair.loadRun(d)", __import__("json").loads(data))
-        page.evaluate(f"window.flypair.setCamera({camera!r})")
-        for i, t in enumerate(ticks):
-            page.evaluate(f"window.flypair.setTick({t}); window.flypair.animate({1.0/fps}); window.flypair.render();")
-            page.screenshot(path=str(tmp / f"f{i:06d}.png"))
-            if verbose and i % 50 == 0:
-                print(f"\r[video3d] frame {i}/{len(ticks)}", end="")
-        browser.close()
+
+    def capture():
+        _capture(data, ticks, tmp, fps, width, height, camera, verbose)
+
+    # Jupyter/Colab already run an asyncio loop, which the sync Playwright API refuses to share:
+    # do the browser work in a plain worker thread in that case.
+    try:
+        import asyncio
+        loop_running = asyncio.get_event_loop().is_running()
+    except RuntimeError:
+        loop_running = False
+    if loop_running:
+        import threading
+        err = []
+        def wrapped():
+            try:
+                capture()
+            except BaseException as e:  # noqa: BLE001
+                err.append(e)
+        t = threading.Thread(target=wrapped); t.start(); t.join()
+        if err:
+            raise err[0]
+    else:
+        capture()
     if verbose:
         print()
     exe = ffmpeg_exe()
@@ -61,3 +71,22 @@ def render3d(run: Run, out: Path | str, fps: int = 30, speed: float = 1.0, width
         shutil.rmtree(tmp, ignore_errors=True)
         return out
     raise RuntimeError(f"ffmpeg not found; PNG frames left in {tmp}")
+
+
+def _capture(data: str, ticks: list, tmp: Path, fps: int, width: int, height: int, camera: str, verbose: bool):
+    import json
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        browser = p.chromium.launch(args=["--use-gl=swiftshader", "--enable-webgl", "--ignore-gpu-blocklist"])
+        page = browser.new_page(viewport={"width": width, "height": height})
+        page.goto(VIEWER.as_uri() + "?headless=1")
+        page.wait_for_function("window.flypair !== undefined", timeout=60000)
+        page.evaluate("d => window.flypair.loadRun(d)", json.loads(data))
+        page.evaluate(f"window.flypair.setCamera({camera!r})")
+        for i, t in enumerate(ticks):
+            page.evaluate(f"window.flypair.setTick({t}); window.flypair.animate({1.0/fps}); window.flypair.render();")
+            page.screenshot(path=str(tmp / f"f{i:06d}.png"))
+            if verbose and i % 50 == 0:
+                print(f"\r[video3d] frame {i}/{len(ticks)}", end="")
+        browser.close()
+
