@@ -28,8 +28,8 @@ def test_clone_mirror_symmetry(tiny):
     a, b = run.fly_frames("A"), run.fly_frames("B")
     assert np.allclose(a.x.to_numpy(), -b.x.to_numpy(), atol=1e-6)
     assert np.allclose(a.y.to_numpy(), -b.y.to_numpy(), atol=1e-6)
-    assert np.allclose((a.heading.to_numpy() - b.heading.to_numpy() - 180) % 360, 0, atol=1e-6) or \
-        np.allclose((a.heading.to_numpy() - b.heading.to_numpy() - 180) % 360, 360, atol=1e-6)
+    dh = (a.heading.to_numpy() - b.heading.to_numpy() - 180 + 180) % 360 - 180   # circular difference
+    assert np.allclose(dh, 0, atol=1e-6)
     for c in run.rate_columns():
         assert np.array_equal(a[c].to_numpy(), b[c].to_numpy()), c
     assert a.x.abs().sum() > 0     # the flies actually moved
