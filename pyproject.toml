@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flypair"
+version = "0.1.0"
+description = "N connectome-simulated fruit flies interacting in a closed-loop virtual world"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.24",
+  "scipy>=1.10",
+  "pandas>=2.0",
+  "pyarrow>=12",
+  "pyyaml>=6",
+  "torch>=2.1",
+  "matplotlib>=3.7",
+  "tqdm>=4.65",
+  "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+dub = ["anthropic>=0.30"]
+
+[project.scripts]
+flypair = "flypair.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["flypair*"]
+
+[tool.setuptools.package-data]
+flypair = ["../groups/*.yaml", "../scenarios/*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

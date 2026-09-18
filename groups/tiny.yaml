@@ -1,0 +1,27 @@
+# Synthetic connectome: every group resolves. Names mirror groups/malecns.yaml.
+groups:
+  sugar_grn:   {type: "^LB3$",     role: sensory, split_side: true}
+  bitter_grn:  {type: "^LB1$",     role: sensory, split_side: true}
+  gr32a:       {type: "^Gr32a$",   role: sensory, split_side: true}
+  ppk23:       {type: "^ppk23$",   role: sensory, split_side: true}
+  or67d:       {type: "^ORN_DA1$", role: sensory, split_side: true}
+  jo_ab:       {type: "^JO-[AB]$", role: sensory, split_side: true}
+  lc10a:       {type: "^LC10a$",   role: sensory, split_side: true}
+  lplc2:       {type: "^LPLC2$",   role: sensory, split_side: true}
+  visual:      {type: "^L1$",      role: sensory, split_side: true}
+  p1:          {type: "^pC1$",     role: internal}
+  mal:         {type: "^mAL$",     role: internal}
+  vab3:        {type: "^vAB3$",    role: internal}
+  asp:         {type: "^aSP22$",   role: internal}
+  vpoen:       {type: "^vpoEN$",   role: internal}
+  aipg:        {type: "^aIPg$",    role: internal}
+  pip10:       {type: "^pIP10$",   role: output}
+  wing_mn:     {type: "^b1 MN$",   role: output}
+  dnp01:       {type: "^DNp01$",   role: output}
+  dna01:       {type: "^DNa01$",   role: output, split_side: true}
+  dna02:       {type: "^DNa02$",   role: output, split_side: true}
+  forward_dn:  {type: "^DNp09$",   role: output}
+  mdn:         {type: "^MDN$",     role: output}
+  mn9:         {type: "^MN9$",     role: output}
+  vpodn:       {type: "^vpoDN$",   role: output}
+  dnp13:       {type: "^DNp13$",   role: output}

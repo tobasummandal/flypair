@@ -1,0 +1,98 @@
+# FlyWire v783 (female, BRAIN ONLY: no VNC, no wing/leg motor neurons).
+# Annotations from Schlegel et al. 2024 (flyconnectome/flywire_annotations TSV);
+# columns in the neuron table: type (=cell_type), class (=cell_class),
+# superclass (=super_class), hemibrain_type, synonyms, side.
+# Checked against the TSV on 2026-09-17. NOTE: the TSV's side labels are mirrored
+# relative to Shiu et al.'s naming: their "right" sugar GRNs are side=left here.
+groups:
+  sugar_grn:
+    type: "^LB3$"
+    side: L
+    role: sensory
+    source: "Shiu et al. example.ipynb's 21 'sugarR' neurons are cell_type LB3, side left"
+  bitter_grn:
+    unresolved: "labellar GRN types LB1/LB2/LB4 carry no receptor/modality label"
+    role: sensory
+  gr32a:
+    unresolved: "no Gr32a label in the annotations"
+    role: sensory
+  ppk23:
+    unresolved: "ppk23 neurons are leg/VNC sensory neurons, absent from the brain-only dataset"
+    role: sensory
+  or67d:
+    type: "^ORN_DA1$"
+    role: sensory
+    split_side: true
+  jo_ab:
+    type: "^JO-[AB]"
+    role: sensory
+    split_side: true
+  lc10a:
+    type: "^LC10a$"
+    role: sensory
+    split_side: true
+  lplc2:
+    type: "^LPLC2$"
+    role: sensory
+    split_side: true
+  visual:
+    type: "^L[12]$"
+    role: sensory
+    split_side: true
+  p1:
+    type: "^pC1[a-e]$"
+    role: internal
+    desc: "female pC1a-e (P1 is male-specific; here pC1 is the female homolog cluster)"
+  mal:
+    type: "^mAL"
+    role: internal
+  vab3:
+    unresolved: "no vAB3 label/synonym in the FlyWire annotations"
+    role: internal
+  asp:
+    type: "^aSP"
+    role: internal
+  vpoen:
+    type: "^vpoEN$"
+    role: internal
+  aipg:
+    hemibrain_type: "^aIPg"
+    role: internal
+  pip10:
+    unresolved: "pIP10 is male-specific; not in the female brain"
+    role: output
+  wing_mn:
+    unresolved: "no VNC in FlyWire; wing motor neurons absent"
+    role: output
+  dnp01:
+    type: "^DNp01$"
+    role: output
+  dna01:
+    type: "^DNa01$"
+    role: output
+    split_side: true
+  dna02:
+    type: "^DNa02$"
+    role: output
+    split_side: true
+  forward_dn:
+    type: "^(DNp09|DNg100)$"
+    role: output
+  mdn:
+    type: "^MDN$"
+    role: output
+  mn9:
+    type: "^CB0701$"
+    role: output
+    split_side: true
+    source: "Shiu's MN9 id 720575940660219265 has cell_type CB0701 (2 neurons, brain_motor_neuron)"
+  aggression_dn:
+    unresolved: "no aggression DN annotation"
+    role: output
+  vpodn:
+    hemibrain_type: "^vpoDN$"
+    role: output
+    desc: "cell_type DNp37"
+  dnp13:
+    type: "^DNp13$"
+    role: output

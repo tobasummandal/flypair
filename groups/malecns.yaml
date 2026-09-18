@@ -1,0 +1,107 @@
+# MaleCNS v1.0 (male, brain + VNC). Queries are regexes on columns of the
+# neuron table built by flypair.connectome.malecns (type, class, superclass,
+# instance, flywireType, hemibrainType, synonyms, receptorType, dimorphism).
+# Every regex below was checked against body-annotations-male-cns-v1.0-minconf-0.5.feather
+# on 2026-09-17 (see PLAN.md). Groups that do not exist in the annotations are
+# declared `unresolved` with the reason.
+groups:
+  # ---- sensory inputs
+  sugar_grn:
+    type: "^LB3[bc]$"
+    role: sensory
+    split_side: true
+    source: "Tastekin et al. 2025 match LB3b/LB3c to Gr64f (sweet); used by drosophila-brain-mlx activity_film"
+  bitter_grn:
+    unresolved: "MaleCNS labels labellar GRNs LB1a-e/LB2a-d/LB3a-d/LB4a-b with no receptor/modality label; bitter subset not identifiable"
+    role: sensory
+  gr32a:
+    unresolved: "no Gr32a / pheromone-taste label anywhere in the annotation table"
+    role: sensory
+  ppk23:
+    receptorType: "^putative_ppk23$"
+    role: sensory
+    split_side: true
+    source: "annotation column receptorType (VNC leg gustatory neurons)"
+  or67d:
+    type: "^ORN_DA1$"
+    role: sensory
+    split_side: true
+    source: "Or67d ORNs project to glomerulus DA1"
+  jo_ab:
+    type: "^JO-[AB]"
+    role: sensory
+    split_side: true
+  lc10a:
+    type: "^LC10a$"
+    role: sensory
+    split_side: true
+  lplc2:
+    type: "^LPLC2$"
+    role: sensory
+    split_side: true
+  visual:
+    type: "^L[12]$"
+    role: sensory
+    split_side: true
+    desc: "lamina monopolar cells L1/L2 as a generic visual input"
+  # ---- internal state (record only)
+  p1:
+    type: "^pC1"
+    dimorphism: "male-specific"
+    role: internal
+    desc: "P1 = male-specific pC1 neurons"
+  mal:
+    type: "^mAL"
+    role: internal
+  vab3:
+    synonyms: "vAB3"
+    role: internal
+    desc: "types AN09B017e/f/g carry the synonym vAB3"
+  asp:
+    type: "^aSP"
+    role: internal
+  vpoen:
+    type: "^vpoEN$"
+    role: internal
+  aipg:
+    type: "^aIPg"
+    role: internal
+  # ---- outputs
+  pip10:
+    type: "^pIP10$"
+    role: output
+  wing_mn:
+    type: "^(b[123]|i[12]|iii[13]|hg[1-4]|ps[12]|tp[12]|tpn|hi[12]|hiii2) MN$|^DLMn|^DVMn|^hDVM MN$"
+    superclass: "^vnc_motor$"
+    role: output
+    desc: "wing steering + power motor neurons (T2)"
+  dnp01:
+    type: "^DNp01$"
+    role: output
+  dna01:
+    type: "^DNa01$"
+    role: output
+    split_side: true
+  dna02:
+    type: "^DNa02$"
+    role: output
+    split_side: true
+  forward_dn:
+    type: "^(DNp09|DNg100)$"
+    role: output
+  mdn:
+    type: "^MDN$"
+    role: output
+  mn9:
+    type: "^MN9$"
+    role: output
+    split_side: true
+  aggression_dn:
+    unresolved: "no aggression-related descending neuron annotation in MaleCNS v1.0"
+    role: output
+  vpodn:
+    unresolved: "vpoDN is female-specific; absent from the male CNS"
+    role: output
+  dnp13:
+    type: "^DNp13$"
+    role: output
