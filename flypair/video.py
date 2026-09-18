@@ -1,9 +1,13 @@
-"""Arena animation -> MP4 (matplotlib + ffmpeg, headless). Flies = oriented triangles,
-song = pulsing ring, escape jump = flash, right panel = live rate bars of key groups."""
+"""Arena animation -> MP4 (matplotlib + ffmpeg, headless). Flies render from a
+GitHub-hosted fly mesh when available, falling back to simple triangles otherwise.
+"""
 from __future__ import annotations
 
+import io
 import shutil
+import urllib.request
 import warnings
+from functools import lru_cache
 from pathlib import Path
 
 import matplotlib
@@ -11,8 +15,22 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import animation
+from scipy.spatial import ConvexHull
 
 from .record import Run
+
+FLY_MESH_BASE = "https://raw.githubusercontent.com/powerOFMAX/fly-parking-lab/main/public/nmf/game/assets/model/"
+FLY_MESH_FILES = [
+    "c_abdomen3.stl",
+    "c_abdomen4.stl",
+    "c_abdomen5.stl",
+    "c_abdomen6.stl",
+    "c_head.stl",
+    "c_rostrum.stl",
+    "c_thorax.stl",
+    "l_eye.stl",
+    "l_wing.stl",
+]
 
 KEY_GROUPS = ["p1", "pip10", "wing_mn", "dna02_L", "dna02_R", "dnp01", "mdn", "vpodn", "dnp13", "mn9"]
 COLORS = ["tab:blue", "tab:red", "tab:green", "tab:orange", "tab:purple"]
@@ -23,6 +41,71 @@ def _triangle(x, y, heading_deg, size):
     pts = np.array([[size, 0], [-size * 0.6, size * 0.5], [-size * 0.6, -size * 0.5]])
     rot = np.array([[np.cos(h), -np.sin(h)], [np.sin(h), np.cos(h)]])
     return pts @ rot.T + [x, y]
+
+
+def _parse_ascii_stl(stream):
+    """Parse a simple ASCII STL into an array of (n_faces, 3, 3) vertices."""
+    data = stream.read().decode("utf-8", errors="ignore")
+    lines = data.splitlines()
+    tokens = []
+    for line in lines:
+        parts = line.strip().split()
+        if len(parts) >= 4 and parts[0] == "vertex":
+            try:
+                tokens.append([float(p) for p in parts[1:4]])
+            except ValueError:
+                continue
+    if not tokens:
+        return np.zeros((0, 3, 3), dtype=float)
+    faces = np.array(tokens, dtype=float).reshape(-1, 3, 3)
+    return faces
+
+
+@lru_cache(maxsize=1)
+def _load_fly_mesh():
+    meshes = []
+    for name in FLY_MESH_FILES:
+        url = FLY_MESH_BASE + name
+        try:
+            with urllib.request.urlopen(url, timeout=20) as resp:
+                mesh = _parse_ascii_stl(io.StringIO(resp.read().decode("utf-8", errors="ignore")))
+            if mesh.size:
+                meshes.append(mesh)
+        except Exception:
+            continue
+    if not meshes:
+        return None
+    return np.concatenate(meshes, axis=0)
+
+
+def _mesh_to_polygon(mesh, heading_deg=0.0, scale=1.0):
+    if mesh is None or mesh.size == 0:
+        return None
+    pts = mesh.reshape(-1, 3)
+    xy = pts[:, :2]
+    xy = xy - xy.mean(axis=0)
+    if np.allclose(xy, 0):
+        return np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
+    h = np.radians(heading_deg)
+    rot = np.array([[np.cos(h), -np.sin(h)], [np.sin(h), np.cos(h)]])
+    xy = (xy @ rot.T) * scale
+    scale_xy = np.max(np.abs(xy))
+    if scale_xy and scale_xy > 0:
+        xy = xy / max(scale_xy, 1e-6)
+    try:
+        hull = ConvexHull(xy)
+        return xy[hull.vertices]
+    except Exception:
+        return xy[np.unique(np.round(xy, 8), axis=0, return_index=True)[1]]
+
+
+def _fly_shape(x, y, heading_deg, size):
+    mesh = _load_fly_mesh()
+    if mesh is not None:
+        poly = _mesh_to_polygon(mesh, heading_deg=heading_deg, scale=float(size) * 2.5)
+        if poly is not None and len(poly) >= 3:
+            return poly + np.array([x, y])
+    return _triangle(x, y, heading_deg, size)
 
 
 def render(run: Run, out: Path | str, fps: int = 25, speed: float = 1.0, captions: dict | None = None,
@@ -50,7 +133,7 @@ def render(run: Run, out: Path | str, fps: int = 25, speed: float = 1.0, caption
     bodies, rings, flashes, labels, bars, caps = {}, {}, {}, {}, {}, {}
     for k, f in enumerate(flies):
         col = COLORS[k % len(COLORS)]
-        bodies[f] = plt.Polygon(_triangle(0, 0, 0, 1.5), color=col)
+        bodies[f] = plt.Polygon(_fly_shape(0, 0, 0, 1.5), color=col)
         ax.add_patch(bodies[f])
         rings[f] = plt.Circle((0, 0), 0.1, fill=False, color=col, lw=2, alpha=0.0)
         ax.add_patch(rings[f])
@@ -72,7 +155,7 @@ def render(run: Run, out: Path | str, fps: int = 25, speed: float = 1.0, caption
         arts = [title]
         for k, f in enumerate(flies):
             r = frames[f].iloc[tick]
-            bodies[f].set_xy(_triangle(r.x, r.y, r.heading, 1.5))
+            bodies[f].set_xy(_fly_shape(r.x, r.y, r.heading, 1.5))
             s = float(r.song)
             rings[f].center = (r.x, r.y); rings[f].radius = 2.0 + 2.5 * s * (0.5 + 0.5 * np.sin(tick * 0.9))
             rings[f].set_alpha(min(1.0, s * 1.2))
