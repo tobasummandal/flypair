@@ -1,0 +1,15 @@
+name: clone_mirror
+description: >-
+  Two identical males (same seed) in a point-symmetric start. Sanity check - the run
+  must be exactly mirror-symmetric (x_A = -x_B, y_A = -y_B, heading_A = heading_B + 180).
+duration_ms: 2000
+world_dt_ms: 20
+arena: {radius_mm: 20}
+flies:
+  - {name: A, connectome: malecns, sex: male, seed: 7, pose: {x: -4, y: 0, heading: 0}}
+  - {name: B, connectome: malecns, sex: male, seed: 7, pose: {x: 4, y: 0, heading: 180}}
+channels: default
+record:
+  groups: default
+  rasters: [p1, pip10]
+controls: []

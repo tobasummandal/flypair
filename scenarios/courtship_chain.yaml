@@ -1,0 +1,15 @@
+name: courtship_chain
+description: Four brake-removed males in a ring, each facing the next one.
+duration_ms: 3000
+world_dt_ms: 20
+arena: {radius_mm: 20}
+flies:
+  - {name: A, connectome: malecns, sex: male, seed: 1, pose: {x: 6, y: 0, heading: 135}, silence: [mal]}
+  - {name: B, connectome: malecns, sex: male, seed: 2, pose: {x: 0, y: 6, heading: 225}, silence: [mal]}
+  - {name: C, connectome: malecns, sex: male, seed: 3, pose: {x: -6, y: 0, heading: 315}, silence: [mal]}
+  - {name: D, connectome: malecns, sex: male, seed: 4, pose: {x: 0, y: -6, heading: 45}, silence: [mal]}
+channels: default
+record:
+  groups: default
+  rasters: [p1, pip10, dna02]
+controls: [open_loop, shuffled]

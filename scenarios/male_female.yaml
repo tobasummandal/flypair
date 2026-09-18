@@ -1,0 +1,15 @@
+name: male_female
+description: >-
+  MaleCNS male + FlyWire female. The female brain has no VNC, so her outputs are
+  descending neurons; vpoDN (acceptance) vs DNp13 (rejection) are logged as accept/reject.
+duration_ms: 3000
+world_dt_ms: 20
+arena: {radius_mm: 20}
+flies:
+  - {name: M, connectome: malecns, sex: male, seed: 1, pose: {x: -4, y: 0, heading: 0}}
+  - {name: F, connectome: flywire, sex: female, seed: 2, pose: {x: 4, y: 0, heading: 180}}
+channels: default
+record:
+  groups: default
+  rasters: [p1, pip10, vpodn, dnp13, jo_ab, vpoen]
+controls: [open_loop, playback, shuffled]

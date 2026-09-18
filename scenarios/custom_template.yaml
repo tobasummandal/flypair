@@ -1,0 +1,62 @@
+# custom_template.yaml — every option, commented. Copy and edit.
+name: custom_template
+description: Template showing every scenario option.
+
+duration_ms: 2000          # biological time to simulate
+world_dt_ms: 20            # world tick; must be a multiple of the brain dt (0.1 ms)
+arena: {radius_mm: 20}     # circular arena; flies are clamped to the wall
+on_unresolved: skip        # skip | fail  — what to do when a channel/silence/activate group is missing
+# device: cuda             # auto (default) | cpu | cuda
+# propagate: auto          # auto (benchmark) | spmm | gather
+
+flies:
+  - name: A
+    connectome: malecns    # malecns | flywire | tiny
+    sex: male              # male | female | none  -> pheromone emitter profile
+    seed: 1                # per-fly RNG seed (Poisson draws)
+    pose: {x: -4, y: 0, heading: 0}    # mm, mm, degrees (0 = +x, counter-clockwise)
+    silence: [mal]         # groups whose spikes are zeroed (mask; W untouched)
+    activate: {p1: 10}     # constant Poisson drive, group -> Hz
+    noise_hz: 0            # background Poisson rate onto EVERY neuron (0 = Shiu default)
+    gain: 1.0              # per-fly multiplier on all synaptic input
+    source: brain          # brain (default) | playback (needs a prior run) | scripted
+    size_mm: 2.5
+  - name: B
+    connectome: flywire
+    sex: female
+    seed: 2
+    pose: {x: 4, y: 0, heading: 180}
+  - name: Dummy            # a brainless scripted emitter (no connectome): sings at 0.5 for ticks 20..60
+    source: scripted
+    sex: female
+    pose: {x: 0, y: 8, heading: 270}
+    timeline: {20: {song: 0.5}, 60: {song: 0.0}}
+
+channels:                  # 'default' | list | {default: true, extra: [...]}
+  default: true            # include the built-in biological channels
+  extra:
+    - name: A_mn9_to_B_sugar        # a deliberately non-biological channel
+      source: "rate:mn9"            # source fly's MN9 rate (Hz)
+      target: sugar_grn             # target fly's sugar GRNs
+      gain: 1.0                     # Hz of drive per Hz of source rate
+      falloff: {type: none}         # none | exp{scale_mm} | inverse_square{r0_mm} | linear{rmax_mm} | contact{radius_mm}
+      fov_deg: 360
+      split_lr: false
+      delay_ms: 40
+      clip_hz: 150
+      from: [A]                     # source fly names (default all)
+      to: [B]                       # target fly names (default: every other fly)
+
+motor:                     # hand-designed decoders (defaults shown); see README
+  forward: {group: forward_dn, gain: 0.25, max_speed: 25}
+  turn: {left: dna02_L, right: dna02_R, gain: 8.0, max_turn: 500}
+  reverse: {group: mdn, threshold: 20, gain: 0.2}
+  escape: {group: dnp01, threshold: 30, jump_mm: 6, refractory_ms: 300}
+  song: {group: pip10, fallback_group: wing_mn, ref_hz: 40}
+  smoothing_ms: 60
+
+record:
+  groups: default          # 'default' = all internal + output groups; or a list of names
+  rasters: [p1, pip10, vpodn, dnp13]   # groups whose individual spikes are kept for raster plots
+
+controls: [open_loop, playback, shuffled]

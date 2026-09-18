@@ -1,0 +1,15 @@
+name: male_male_brake_removed
+description: >-
+  Same as male_male_intact but the mAL inhibitory brake is silenced in both males
+  (Gr32a input is unresolved on MaleCNS, so mAL is the brake we can remove).
+duration_ms: 3000
+world_dt_ms: 20
+arena: {radius_mm: 20}
+flies:
+  - {name: A, connectome: malecns, sex: male, seed: 1, pose: {x: -4, y: 0, heading: 0}, silence: [mal]}
+  - {name: B, connectome: malecns, sex: male, seed: 2, pose: {x: 4, y: 0, heading: 180}, silence: [mal]}
+channels: default
+record:
+  groups: default
+  rasters: [p1, pip10, mal, dna02, dnp01, lc10a, jo_ab]
+controls: [open_loop, playback, shuffled]

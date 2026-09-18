@@ -1,0 +1,16 @@
+name: male_male_intact
+description: >-
+  Two MaleCNS males facing each other, all default channels (song->JO, body->LC10a,
+  looming->LPLC2, male pheromone->Or67d; Gr32a is unresolved on MaleCNS so that channel is skipped;
+  female pheromone->ppk23).
+duration_ms: 3000
+world_dt_ms: 20
+arena: {radius_mm: 20}
+flies:
+  - {name: A, connectome: malecns, sex: male, seed: 1, pose: {x: -4, y: 0, heading: 0}}
+  - {name: B, connectome: malecns, sex: male, seed: 2, pose: {x: 4, y: 0, heading: 180}}
+channels: default
+record:
+  groups: default
+  rasters: [p1, pip10, mal, dna02, dnp01, lc10a, jo_ab]
+controls: [open_loop, playback, shuffled]
