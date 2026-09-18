@@ -21,7 +21,14 @@ def main(argv=None):
     g.add_argument("connectome"); g.add_argument("--cache", default="cache")
     s = sub.add_parser("sanity", help="sugar GRN -> MN9 sanity check")
     s.add_argument("connectome"); s.add_argument("--cache", default="cache"); s.add_argument("--rate", type=float, default=100.0)
+    w = sub.add_parser("web", help="local web UI (dashboard + 3D viewer) on http://localhost:8000")
+    w.add_argument("--port", type=int, default=8000); w.add_argument("--host", default="127.0.0.1")
+    w.add_argument("--cache", default="cache"); w.add_argument("--out", default="runs")
     a = ap.parse_args(argv)
+    if a.cmd == "web":
+        from .web import serve
+        serve(a.host, a.port, a.cache, a.out)
+        return
 
     from .connectome import load_connectome
     if a.cmd == "groups":

@@ -155,7 +155,7 @@ def _record_groups(reg: GroupRegistry, spec) -> list:
 
 def run_scenario(scn: dict, connectomes: dict, control: str | None = None, playback_from: Run | None = None,
                  device: str = "auto", propagate: str | None = None, progress: bool = True,
-                 out_dir: Path | str | None = None, verbose: bool = True) -> Run:
+                 out_dir: Path | str | None = None, verbose: bool = True, progress_cb=None) -> Run:
     """Run one scenario. `connectomes` maps name -> Connectome (already built).
     control: None | 'open_loop' | 'playback' | 'shuffled'."""
     scn = validate(scn, scn.get("name", "<dict>"))
@@ -273,6 +273,8 @@ def run_scenario(scn: dict, connectomes: dict, control: str | None = None, playb
         it = tqdm(it, desc=f"{scn['name']}{'/' + control if control else ''}", unit="tick")
     window_s = dt_world / 1000.0
     for tick in it:
+        if progress_cb is not None and (tick % 5 == 0 or tick == n_ticks - 1):
+            progress_cb(tick + 1, n_ticks)
         # 1. brains run one window
         for cname, slot in slots.items():
             slot.brain.run(steps_per_tick)

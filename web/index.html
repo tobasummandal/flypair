@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>flypair</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{--bg:#15171b;--panel:#1f2329;--line:#2e343c;--fg:#e8e6e1;--mut:#9aa3ad;--acc:#4aa3ff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,sans-serif}
+  header{display:flex;align-items:baseline;gap:14px;padding:12px 20px;border-bottom:1px solid var(--line)}
+  header h1{font-size:18px;margin:0}header span{color:var(--mut);font-size:12px}
+  main{display:grid;grid-template-columns:340px 1fr;gap:16px;padding:16px 20px;min-height:calc(100vh - 50px)}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:0 0 10px}
+  label{display:block;margin:8px 0 3px;color:var(--mut);font-size:12px}
+  select,input[type=number]{width:100%;background:#12151a;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:7px 8px;font:inherit}
+  .chk{display:flex;gap:12px;flex-wrap:wrap;margin-top:4px}.chk label{margin:0;display:flex;gap:4px;align-items:center;color:var(--fg)}
+  button{background:var(--acc);color:#08131f;border:0;border-radius:6px;padding:9px 14px;font:inherit;font-weight:600;cursor:pointer;margin-top:12px;width:100%}
+  button.sec{background:#2c3138;color:var(--fg);width:auto;padding:6px 10px;margin:0;font-weight:500}
+  button:disabled{opacity:.5;cursor:default}
+  .desc{color:var(--mut);font-size:12px;margin-top:6px;white-space:pre-wrap}
+  #prog{height:8px;background:#0f1216;border-radius:4px;overflow:hidden;margin-top:10px}#prog i{display:block;height:100%;background:var(--acc);width:0;transition:width .2s}
+  #stage{font-size:12px;color:var(--mut);margin-top:4px}
+  pre{background:#0f1216;border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;font-size:12px;max-height:300px}
+  table{width:100%;border-collapse:collapse;font-size:12px}td,th{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left}tr.sel td{background:#26303c}tr{cursor:pointer}
+  .tabs{display:flex;gap:6px;margin-bottom:10px}.tabs button{width:auto;margin:0;padding:6px 12px;background:#2c3138;color:var(--fg);font-weight:500}.tabs button.on{background:var(--acc);color:#08131f}
+  iframe{width:100%;height:640px;border:1px solid var(--line);border-radius:8px;background:#1a1d22}
+  img{max-width:100%;border-radius:8px;background:#fff}
+  .err{color:#ff7a7a;white-space:pre-wrap;font-size:12px}
+  .right{display:flex;flex-direction:column;gap:16px}
+  @media(max-width:900px){main{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><h1>flypair</h1><span>connectome-simulated flies in closed loop · local UI</span></header>
+<main>
+  <aside class="panel">
+    <h2>New run</h2>
+    <label>scenario</label><select id="scn"></select>
+    <div class="desc" id="desc"></div>
+    <label>connectome for every fly</label><select id="conn"></select>
+    <label>duration (ms)</label><input type="number" id="dur" value="1000" min="100" step="100">
+    <label>controls</label>
+    <div class="chk"><label><input type="checkbox" id="c_open" value="open_loop">open_loop</label><label><input type="checkbox" id="c_play" value="playback">playback</label><label><input type="checkbox" id="c_shuf" value="shuffled">shuffled</label></div>
+    <label>3D video (headless render, slow)</label>
+    <div class="chk"><label><input type="checkbox" id="v3d">render arena3d.mp4</label><select id="cam3d" style="width:auto"><option>orbit</option><option>top</option><option>follow:A</option><option>follow:B</option></select></div>
+    <button id="go">Run</button>
+    <div id="prog"><i></i></div><div id="stage"></div>
+    <div class="err" id="err"></div>
+    <h2 style="margin-top:18px">Runs</h2>
+    <table id="runs"><thead><tr><th>name</th><th>ms</th><th>flies</th><th>wall</th></tr></thead><tbody></tbody></table>
+  </aside>
+  <section class="right">
+    <div class="panel">
+      <div class="tabs"><button class="on" data-t="v3d">3D viewer</button><button data-t="rates">rates</button><button data-t="rasters">rasters</button><button data-t="traj">trajectories</button><button data-t="metrics">metrics</button><button data-t="yaml">scenario YAML</button></div>
+      <div id="t_v3d"><iframe id="viewer" src="/viewer"></iframe><div class="desc">drag to orbit · scroll to zoom · space = play · ←/→ = step · camera dropdown for follow view</div></div>
+      <div id="t_rates" hidden><img id="img_rates"></div>
+      <div id="t_rasters" hidden><img id="img_rasters"></div>
+      <div id="t_traj" hidden><img id="img_traj"></div>
+      <div id="t_metrics" hidden><pre id="metrics">select a run</pre><pre id="summary"></pre></div>
+      <div id="t_yaml" hidden><pre id="yaml"></pre></div>
+    </div>
+  </section>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+let scenarios = [], selected = null;
+async function j(u, o) { const r = await fetch(u, o); if (!r.ok) throw new Error(await r.text()); return r.json(); }
+async function init() {
+  scenarios = await j('/api/scenarios');
+  $('#scn').innerHTML = scenarios.map(s => `<option value="${s.name}">${s.name}</option>`).join('');
+  const conns = await j('/api/connectomes');
+  $('#conn').innerHTML = Object.entries(conns).map(([n, ok]) => `<option value="${n}" ${ok ? '' : 'disabled'}>${n}${ok ? '' : ' (not in cache — build on Colab)'}</option>`).join('');
+  $('#scn').onchange = showScn; showScn();
+  await loadRuns();
+}
+function showScn() {
+  const s = scenarios.find(x => x.name === $('#scn').value); if (!s) return;
+  $('#desc').textContent = (s.description || s.error || '') + '\nflies: ' + (s.flies || []).map(f => `${f.name} (${f.connectome || 'no brain'}, ${f.sex})`).join(', ');
+  $('#dur').value = Math.min(s.duration_ms || 1000, 2000);
+  for (const [id, c] of [['#c_open', 'open_loop'], ['#c_play', 'playback'], ['#c_shuf', 'shuffled']]) $(id).checked = (s.controls || []).includes(c);
+  $('#yaml').textContent = s.yaml || '';
+}
+async function loadRuns() {
+  const runs = await j('/api/runs');
+  $('#runs tbody').innerHTML = runs.map(r => `<tr data-n="${r.name}" class="${r.name === selected ? 'sel' : ''}"><td>${r.name}</td><td>${r.duration_ms}</td><td>${(r.flies || []).join(',')}</td><td>${(r.wall_s || 0).toFixed(1)}s</td></tr>`).join('');
+  document.querySelectorAll('#runs tr[data-n]').forEach(tr => tr.onclick = () => select(tr.dataset.n));
+}
+async function select(name) {
+  selected = name; await loadRuns();
+  $('#viewer').src = `/viewer?run=/api/runs/${name}/run3d.json`;
+  for (const [k, f] of [['rates', 'rates.png'], ['rasters', 'rasters.png'], ['traj', 'trajectories.png']]) $('#img_' + k).src = `/api/runs/${name}/${f}?t=${Date.now()}`;
+  $('#metrics').textContent = 'loading…';
+  try { $('#metrics').textContent = await (await fetch(`/api/metrics/${name}`)).text(); } catch (e) { $('#metrics').textContent = String(e); }
+  try { $('#summary').textContent = await (await fetch(`/api/runs/${name}/summary`)).text(); } catch (e) {}
+}
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => { document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b)); for (const t of ['v3d', 'rates', 'rasters', 'traj', 'metrics', 'yaml']) $('#t_' + t).hidden = t !== b.dataset.t; });
+$('#go').onclick = async () => {
+  $('#err').textContent = ''; $('#go').disabled = true;
+  const controls = ['#c_open', '#c_play', '#c_shuf'].filter(id => $(id).checked).map(id => $(id).value);
+  try {
+    const job = await j('/api/run', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ scenario: $('#scn').value, connectome: $('#conn').value, duration_ms: +$('#dur').value, controls, video3d: $('#v3d').checked, camera: $('#cam3d').value }) });
+    const t = setInterval(async () => {
+      const s = await j('/api/jobs/' + job.id);
+      $('#prog i').style.width = (100 * s.tick / s.n_ticks).toFixed(1) + '%';
+      $('#stage').textContent = `${s.stage} · tick ${s.tick}/${s.n_ticks} · ${s.elapsed_s.toFixed(0)} s`;
+      if (s.done) { clearInterval(t); $('#go').disabled = false; if (s.error) $('#err').textContent = s.error; else { await loadRuns(); select(s.run); } }
+    }, 500);
+  } catch (e) { $('#err').textContent = String(e); $('#go').disabled = false; }
+};
+init();
+</script>
+</body>
+</html>

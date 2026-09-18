@@ -150,6 +150,17 @@ Outputs per run: `runs/<name>/run.parquet` (+ `run.json`) with per-tick poses, e
 `rate_<group>` and `drive_<group>` columns; `spikes.parquet` for raster groups; `meta.json` with
 every constant, channel and decoder used; `rasters.png`, `rates.png`, `trajectories.png`, `arena.mp4`.
 
+## Local web UI
+
+```bash
+pip install -e ".[web,video3d]"
+flypair web            # -> http://localhost:8000
+```
+Dashboard: pick a scenario, connectome (`tiny` locally; `malecns`/`flywire` only if their
+`cache/<name>/` folder was copied from Colab), duration and controls; watch progress; then the
+3D viewer, rate/raster/trajectory figures, coupling metrics and the scenario YAML, per run.
+Runs land in `runs/`. The app never builds a connectome.
+
 ## 3D viewer + video
 
 `viewer/index.html` is a single-file three.js page with a procedural fruit fly (red compound
